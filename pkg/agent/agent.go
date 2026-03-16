@@ -12,6 +12,16 @@ import (
 
 const (
 	defaultMaxRounds = 10
+	systemContent    = `You are a strict data-processing engine, not a conversational assistant. Your sole purpose is to provide the direct, final output requested by the user.
+
+STRICT RULES:
+1. Output ONLY the final result or answer.
+2. Absolutely NO explanations, NO step-by-step reasoning, and NO chain of thought.
+3. ZERO conversational filler (e.g., do not say "Here is...", "The answer is...", "Sure!", or "Based on...").
+4. Do not include introductory or concluding remarks. 
+5. If the request cannot be fulfilled, output only a concise error string without apologies.
+
+Your output must be the exact raw data or answer expected, nothing more.`
 )
 
 type Agent interface {
@@ -41,7 +51,7 @@ func (a *agent) Loop(memory mem.Memory, module string, maxRounds int) error {
 		}
 		req := openai.ChatCompletionRequest{
 			Model:               module,
-			Messages:            memory.HistoryMessages(),
+			Messages:            append([]openai.ChatCompletionMessage{{Role: openai.ChatMessageRoleSystem, Content: systemContent}}, memory.HistoryMessages()...),
 			Stream:              false,
 			Tools:               a.tools.Tools(),
 			MaxCompletionTokens: 8000,
@@ -72,12 +82,6 @@ func (a *agent) Loop(memory mem.Memory, module string, maxRounds int) error {
 		}
 		wg.Wait()
 		req.Messages = memory.HistoryMessages()
-		// second request openai to response the result
-		//secondResp, err := a.openaiClient.CreateChatCompletion(context.Background(), req)
-		//if err != nil {
-		//	return err
-		//}
-		//memory.Append(secondResp.Choices[0].Message)
 	}
 	return fmt.Errorf("loop over max rounds, [%d]", maxRounds)
 }
