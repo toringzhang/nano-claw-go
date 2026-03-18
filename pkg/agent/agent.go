@@ -49,12 +49,17 @@ func (a *agent) Loop(memory mem.Memory, module string, maxRounds int) error {
 		if memory.Length() <= 0 {
 			return fmt.Errorf("memory is empty")
 		}
+
+		toolsPrompt := ""
+		for _, tool := range a.tools {
+			toolsPrompt += tool.Prompt()
+		}
 		req := openai.ChatCompletionRequest{
 			Model:               module,
-			Messages:            append([]openai.ChatCompletionMessage{{Role: openai.ChatMessageRoleSystem, Content: systemContent}}, memory.HistoryMessages()...),
+			Messages:            append([]openai.ChatCompletionMessage{{Role: openai.ChatMessageRoleSystem, Content: systemContent + toolsPrompt}}, memory.HistoryMessages()...),
 			Stream:              false,
 			Tools:               a.tools.Tools(),
-			MaxCompletionTokens: 8000,
+			MaxCompletionTokens: 12000,
 		}
 		resp, err := a.openaiClient.CreateChatCompletion(context.Background(), req)
 		if err != nil {

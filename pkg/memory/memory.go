@@ -132,6 +132,9 @@ func (m *memory) saveHistory() {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	m.hasSync = true
+	if len(m.history) == 0 {
+		return
+	}
 	data, err := json.Marshal(m.history)
 	if err != nil {
 		fmt.Printf("history marshal error: %s\n", err)

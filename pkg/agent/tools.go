@@ -11,11 +11,13 @@ import (
 	"github.com/Knetic/govaluate"
 	"github.com/sashabaranov/go-openai"
 	"github.com/sashabaranov/go-openai/jsonschema"
+	"github.com/toringzhang/nano-claw-go/pkg/skill"
 )
 
 type Tool interface {
 	Name() string
 	Tool() openai.Tool
+	Prompt() string
 	Call(ctx context.Context, parameters map[string]any) string
 }
 
@@ -29,6 +31,7 @@ func NewTools(customTools []Tool) Tools {
 		&calculator{},
 		&reader{},
 		&writer{},
+		&skillLoader{loader: skill.NewSkillLoader("./skills")},
 	}
 	return append(tools, customTools...)
 }
@@ -67,6 +70,10 @@ func (t Tools) Dispatch(ctx context.Context, toolCall *openai.ToolCall) string {
 }
 
 type calculator struct {
+}
+
+func (c *calculator) Prompt() string {
+	return ""
 }
 
 func (c *calculator) Name() string {
@@ -114,6 +121,10 @@ func (c *calculator) Call(ctx context.Context, parameters map[string]any) string
 }
 
 type reader struct {
+}
+
+func (r *reader) Prompt() string {
+	return ""
 }
 
 func (r *reader) Name() string {
@@ -181,6 +192,10 @@ func (r *reader) Call(ctx context.Context, parameters map[string]any) string {
 type writer struct {
 }
 
+func (w *writer) Prompt() string {
+	return ""
+}
+
 func (w *writer) Name() string {
 	return "writer"
 }
@@ -229,4 +244,47 @@ func (w *writer) Call(ctx context.Context, parameters map[string]any) string {
 	result := fmt.Sprintf("write to %s success. size: %d", path, n)
 	fmt.Printf("\033[30m>> tool [%s] call result: %v\n\033[0m", w.Name(), result)
 	return fmt.Sprintf("%v", result)
+}
+
+type skillLoader struct {
+	loader skill.SkillLoader
+}
+
+func (s *skillLoader) Prompt() string {
+	return s.loader.Prompt()
+}
+
+func (s *skillLoader) Name() string {
+	return "load_skill"
+}
+
+func (s *skillLoader) Tool() openai.Tool {
+	return openai.Tool{
+		Type: openai.ToolTypeFunction,
+		Function: &openai.FunctionDefinition{
+			Name:        s.Name(),
+			Description: "Load specialized knowledge by name.",
+			Parameters: jsonschema.Definition{
+				Type: jsonschema.Object,
+				Properties: map[string]jsonschema.Definition{
+					"name": {
+						Type:        jsonschema.String,
+						Description: "Skill name to load",
+					},
+				},
+				Required: []string{"name"},
+			},
+		},
+	}
+}
+
+func (s *skillLoader) Call(ctx context.Context, parameters map[string]any) string {
+	skill, ok := parameters["name"].(string)
+	if !ok {
+		return fmt.Sprintf("tool [%s] parse parameters failed: %v\n", s.Name(), fmt.Errorf("name type incorrect"))
+	}
+	fmt.Printf("\033[30m>> tool [%s] call skill: %s\n\033[0m", s.Name(), skill)
+	result := s.loader.Skill(skill)
+	fmt.Printf("\033[30m>> tool [%s] call result: %s\n\033[0m", s.Name(), result)
+	return fmt.Sprintf("%s", result)
 }
