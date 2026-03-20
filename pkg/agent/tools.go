@@ -26,12 +26,19 @@ type Tools []Tool
 var _ Tools
 
 func NewTools(customTools []Tool) Tools {
+
+	sl := &skillLoader{loader: skill.NewSkillLoader("./skills")}
+	err := sl.loader.Load()
+	if err != nil {
+		panic(err)
+	}
+
 	// default tools
 	tools := Tools{
 		&calculator{},
 		&reader{},
 		&writer{},
-		&skillLoader{loader: skill.NewSkillLoader("./skills")},
+		sl,
 	}
 	return append(tools, customTools...)
 }
