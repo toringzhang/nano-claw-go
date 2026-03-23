@@ -31,19 +31,19 @@ type history struct {
 type memory struct {
 	mutex sync.RWMutex
 
-	channelId string
-	history   []history
-	length    int
-	hasSync   bool
+	key     string
+	history []history
+	length  int
+	hasSync bool
 }
 
-func NewMemory(channelId string) Memory {
+func NewMemory(key string) Memory {
 	if err := os.MkdirAll(filepath.Join("memory"), 0755); err != nil {
 		panic(err)
 	}
 	return &memory{
-		channelId: channelId,
-		history:   []history{},
+		key:     key,
+		history: []history{},
 	}
 }
 
@@ -148,7 +148,7 @@ func (m *memory) saveHistory() {
 }
 
 func (m *memory) fileName() string {
-	return filepath.Join("memory", m.channelId+".json")
+	return filepath.Join("memory", m.key+".json")
 }
 
 func safeWriteFile(filename string, data []byte, perm os.FileMode) error {

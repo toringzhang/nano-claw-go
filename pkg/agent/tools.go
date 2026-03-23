@@ -26,7 +26,7 @@ type Tools []Tool
 
 var _ Tools
 
-func NewTools(customTools []Tool) Tools {
+func StandardTools() Tools {
 
 	sl := &skillLoader{loader: skill.NewSkillLoader("./skills")}
 	err := sl.loader.Load()
@@ -35,14 +35,13 @@ func NewTools(customTools []Tool) Tools {
 	}
 
 	// default tools
-	tools := Tools{
+	return Tools{
 		&calculator{},
 		&reader{},
 		&writer{},
 		&executor{},
 		sl,
 	}
-	return append(tools, customTools...)
 }
 
 func (t Tools) Tools() []openai.Tool {
@@ -82,7 +81,7 @@ type calculator struct {
 }
 
 func (c *calculator) Prompt() string {
-	return ""
+	return "Use calculator to calculate the result of the expression. Your output must be the exact raw data or answer expected, nothing more."
 }
 
 func (c *calculator) Name() string {
@@ -356,5 +355,52 @@ func (s *skillLoader) Call(ctx context.Context, parameters map[string]any) strin
 	fmt.Printf("\033[30m>> tool [%s] call skill: %s\n\033[0m", s.Name(), skill)
 	result := s.loader.Skill(skill)
 	fmt.Printf("\033[30m>> tool [%s] call result: %s\n\033[0m", s.Name(), result)
+	return fmt.Sprintf("%s", result)
+}
+
+type task struct {
+	Module    string
+	openaiCli *openai.Client
+	tools     []Tool
+}
+
+func (t *task) Name() string {
+	return "task"
+}
+
+func (t *task) Tool() openai.Tool {
+	return openai.Tool{
+		Type: openai.ToolTypeFunction,
+		Function: &openai.FunctionDefinition{
+			Name:        t.Name(),
+			Description: "Spawn a subagent with fresh context. It not conversation history. For complex tasks, please use it to complete one or some of the steps.",
+			Parameters: jsonschema.Definition{
+				Type: jsonschema.Object,
+				Properties: map[string]jsonschema.Definition{
+					"prompt": {
+						Type:        jsonschema.String,
+						Description: "Short description of the task",
+					},
+				},
+				Required: []string{"prompt"},
+			},
+		},
+	}
+}
+
+func (t *task) Prompt() string {
+	return ""
+}
+
+func (t *task) Call(ctx context.Context, parameters map[string]any) string {
+	prompt, ok := parameters["prompt"].(string)
+	if !ok {
+		return fmt.Sprintf("tool [%s] parse parameters failed: %v\n", t.Name(), fmt.Errorf("prompt type incorrect"))
+	}
+	fmt.Printf("\033[30m>> tool [%s] call prompt: %s\n\033[0m", t.Name(), prompt)
+
+	sub := NewSubagent("task", "For complex tasks, use it to complete one or some of the steps.", t.openaiCli, t.Module, prompt, t.tools)
+	result := sub.Run(ctx)
+	fmt.Printf("\033[30m>> tool [%s] call result: %s\n\033[0m", t.Name(), result)
 	return fmt.Sprintf("%s", result)
 }

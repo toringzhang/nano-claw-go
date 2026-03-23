@@ -12,51 +12,47 @@ import (
 
 const (
 	defaultMaxRounds = 10
-	systemContent    = `You are a strict data-processing engine, not a conversational assistant. Your sole purpose is to provide the direct, final output requested by the user.
-
-STRICT RULES:
-1. Output ONLY the final result or answer.
-2. Absolutely NO explanations, NO step-by-step reasoning, and NO chain of thought.
-3. ZERO conversational filler (e.g., do not say "Here is...", "The answer is...", "Sure!", or "Based on...").
-4. Do not include introductory or concluding remarks. 
-5. If the request cannot be fulfilled, output only a concise error string without apologies.
-
-Your output must be the exact raw data or answer expected, nothing more.`
 )
 
 type Agent interface {
-	Loop(memory mem.Memory, module string, maxRounds int) error
+	Loop(ctx context.Context, maxRounds int) error
 }
 
 type agent struct {
 	openaiClient *openai.Client
+	module       string // llm module
+	system       string // system prompt
 	tools        Tools
+	memory       mem.Memory
 }
 
-func NewAgent(openaiCli *openai.Client) Agent {
+func NewAgent(openaiCli *openai.Client, module string, system string, tools []Tool, memory mem.Memory) Agent {
 	return &agent{
 		openaiClient: openaiCli,
-		tools:        NewTools(nil),
+		module:       module,
+		system:       system,
+		tools:        tools,
+		memory:       memory,
 	}
 }
 
-func (a *agent) Loop(memory mem.Memory, module string, maxRounds int) error {
+func (a *agent) Loop(ctx context.Context, maxRounds int) error {
 	if maxRounds <= 0 {
 		maxRounds = defaultMaxRounds
 	}
+	toolsPrompt := ""
+	for _, tool := range a.tools {
+		toolsPrompt += tool.Prompt()
+	}
+	prompt := a.system + toolsPrompt
 	for range maxRounds {
-		time.Sleep(1 * time.Second)
-		if memory.Length() <= 0 {
+		if a.memory.Length() <= 0 {
 			return fmt.Errorf("memory is empty")
 		}
 
-		toolsPrompt := ""
-		for _, tool := range a.tools {
-			toolsPrompt += tool.Prompt()
-		}
 		req := openai.ChatCompletionRequest{
-			Model:               module,
-			Messages:            append([]openai.ChatCompletionMessage{{Role: openai.ChatMessageRoleSystem, Content: systemContent + toolsPrompt}}, memory.HistoryMessages()...),
+			Model:               a.module,
+			Messages:            append([]openai.ChatCompletionMessage{{Role: openai.ChatMessageRoleSystem, Content: prompt}}, a.memory.HistoryMessages()...),
 			Stream:              false,
 			Tools:               a.tools.Tools(),
 			MaxCompletionTokens: 12000,
@@ -66,7 +62,7 @@ func (a *agent) Loop(memory mem.Memory, module string, maxRounds int) error {
 			return err
 		}
 		msg := resp.Choices[0].Message
-		memory.Append(msg)
+		a.memory.Append(msg)
 		if resp.Choices[0].FinishReason != openai.FinishReasonToolCalls {
 			return nil
 		}
@@ -75,18 +71,18 @@ func (a *agent) Loop(memory mem.Memory, module string, maxRounds int) error {
 			for _, toolCall := range msg.ToolCalls {
 				wg.Add(1)
 				go func(toolCall *openai.ToolCall) {
-					ctx, cancel := context.WithTimeout(context.Background(), time.Minute*5)
+					subCtx, cancel := context.WithTimeout(ctx, time.Minute*5)
 					defer func() {
 						wg.Done()
 						cancel()
 					}()
-					result := a.tools.Dispatch(ctx, toolCall)
-					memory.Append(openai.ChatCompletionMessage{Role: openai.ChatMessageRoleTool, Content: result, Name: toolCall.Function.Name, ToolCallID: toolCall.ID})
+					result := a.tools.Dispatch(subCtx, toolCall)
+					a.memory.Append(openai.ChatCompletionMessage{Role: openai.ChatMessageRoleTool, Content: result, Name: toolCall.Function.Name, ToolCallID: toolCall.ID})
 				}(&toolCall)
 			}
 		}
 		wg.Wait()
-		req.Messages = memory.HistoryMessages()
+		req.Messages = a.memory.HistoryMessages()
 	}
 	return fmt.Errorf("loop over max rounds, [%d]", maxRounds)
 }

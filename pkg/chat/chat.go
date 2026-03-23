@@ -13,6 +13,10 @@ import (
 	"github.com/toringzhang/nano-claw-go/pkg/memory"
 )
 
+const (
+	systemPrompt = `You are a helpful assistant. You are able to answer questions and perform tasks.`
+)
+
 var (
 	openaiBaseUrl = os.Getenv("OPENAI_BASE_URL")
 	openaiToken   = os.Getenv("OPENAI_AUTH_TOKEN")
@@ -29,15 +33,18 @@ func usage() {
 func Main() {
 
 	channelId := uuid.NewString()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.WithValue(context.Background(), "channelId", channelId))
 	defer cancel()
 
+	// create main memory
 	mem := memory.NewMemory(channelId)
 	go mem.Run(ctx)
 
 	scanner := bufio.NewScanner(os.Stdin)
 	openaiCli := initOpenaiClient()
-	ag := agent.NewAgent(openaiCli)
+	tools := agent.StandardTools()
+	mainAgent := agent.NewAgent(openaiCli, module, systemPrompt, tools, mem)
+
 	fmt.Printf("channel %s\n", channelId)
 	fmt.Println("Please enter the content and press Enter (enter '/exit' to exit):")
 	usage()
@@ -65,7 +72,7 @@ func Main() {
 			}
 
 			mem.Append(openai.ChatCompletionMessage{Role: openai.ChatMessageRoleUser, Content: input})
-			err := ag.Loop(mem, module, 0)
+			err := mainAgent.Loop(ctx, 10)
 			if err != nil {
 				fmt.Printf("\033[31mSystem: %v\n\033[0m", err)
 				continue
