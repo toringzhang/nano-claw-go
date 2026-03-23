@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/Knetic/govaluate"
@@ -38,6 +39,7 @@ func NewTools(customTools []Tool) Tools {
 		&calculator{},
 		&reader{},
 		&writer{},
+		&executor{},
 		sl,
 	}
 	return append(tools, customTools...)
@@ -238,7 +240,7 @@ func (w *writer) Call(ctx context.Context, parameters map[string]any) string {
 	if !ok {
 		return fmt.Sprintf("tool [%s] parse parameters failed: %v\n", w.Name(), fmt.Errorf("content type incorrect"))
 	}
-	fmt.Printf("\033[30m>> tool [%s] call path: %s, lines: %s\n\033[0m", w.Name(), path, content)
+	fmt.Printf("\033[30m>> tool [%s] call path: %s, content: %s\n\033[0m", w.Name(), path, content)
 	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0666)
 	if err != nil {
 		return fmt.Sprintf("tool [%s] open file failed: %v", w.Name(), err)
@@ -250,6 +252,67 @@ func (w *writer) Call(ctx context.Context, parameters map[string]any) string {
 	}
 	result := fmt.Sprintf("write to %s success. size: %d", path, n)
 	fmt.Printf("\033[30m>> tool [%s] call result: %v\n\033[0m", w.Name(), result)
+	return fmt.Sprintf("%v", result)
+}
+
+type executor struct {
+}
+
+func (e *executor) Name() string {
+	return "executor"
+}
+
+func (e *executor) Tool() openai.Tool {
+	return openai.Tool{
+		Type: openai.ToolTypeFunction,
+		Function: &openai.FunctionDefinition{
+			Name:        e.Name(),
+			Description: "Run a shell command.",
+			Parameters: jsonschema.Definition{
+				Type: jsonschema.Object,
+				Properties: map[string]jsonschema.Definition{
+					"command": {
+						Type:        jsonschema.String,
+						Description: "The command to run, e.g. 'ls -l'",
+					},
+				},
+				Required: []string{"command"},
+			},
+		},
+	}
+}
+
+func (e *executor) Prompt() string {
+	return ""
+}
+
+func (e *executor) Call(ctx context.Context, parameters map[string]any) string {
+	dangerous := func(command string) bool {
+		command = strings.TrimSpace(command)
+		if command == "rm -rf /" || command == "shutdown" || command == "reboot" || strings.Contains(command, "sudo") {
+			return true
+		}
+		return false
+	}
+
+	command, ok := parameters["command"].(string)
+	if !ok {
+		return fmt.Sprintf("tool [%s] parse parameters failed: %v\n", e.Name(), fmt.Errorf("command type incorrect"))
+	}
+	fmt.Printf("\033[30m>> tool [%s] call command: %s, \n\033[0m", e.Name(), command)
+	result := ""
+	if dangerous(command) {
+		result = fmt.Sprintf("tool [%s] execute command failed: %v", e.Name(), fmt.Errorf("dangerous command: %s", command))
+	} else {
+		cmd := exec.CommandContext(ctx, "sh", "-c", command)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			result = fmt.Sprintf("tool [%s] execute command failed: %v, output: %s", e.Name(), err, string(output))
+		} else {
+			result = string(output)
+		}
+	}
+	fmt.Printf("\033[30m>> tool [%s] call result: %v\n\033[0m", e.Name(), result)
 	return fmt.Sprintf("%v", result)
 }
 
