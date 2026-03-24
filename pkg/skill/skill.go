@@ -166,7 +166,7 @@ func readSkill(path string) (*Skill, error) {
 		return nil, fmt.Errorf("%s format error", skillPath)
 	}
 	for _, item := range strings.Split(doc[1], "\n") {
-		kv := strings.Split(strings.TrimSpace(item), ":")
+		kv := strings.SplitN(strings.TrimSpace(item), ":", 2)
 		if len(kv) != 2 {
 			continue
 		}

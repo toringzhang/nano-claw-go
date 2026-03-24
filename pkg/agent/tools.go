@@ -364,6 +364,19 @@ type task struct {
 	tools     []Tool
 }
 
+func NewTaskTool(openaiCli *openai.Client, module string) Tool {
+	return &task{
+		openaiCli: openaiCli,
+		Module:    module,
+		tools: Tools{
+			&calculator{},
+			&reader{},
+			&writer{},
+			&executor{},
+		},
+	}
+}
+
 func (t *task) Name() string {
 	return "task"
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/sashabaranov/go-openai"
@@ -14,7 +15,7 @@ import (
 )
 
 const (
-	systemPrompt = `You are a helpful assistant. You are able to answer questions and perform tasks.`
+	systemPrompt = `You are a helpful assistant. You are able to answer questions and perform tasks. Tody is %s.`
 )
 
 var (
@@ -43,7 +44,9 @@ func Main() {
 	scanner := bufio.NewScanner(os.Stdin)
 	openaiCli := initOpenaiClient()
 	tools := agent.StandardTools()
-	mainAgent := agent.NewAgent(openaiCli, module, systemPrompt, tools, mem)
+	taskTool := agent.NewTaskTool(openaiCli, module)
+	tools = append(tools, taskTool)
+	mainAgent := agent.NewAgent(openaiCli, module, fmt.Sprintf(systemPrompt, time.Now().Format(time.RFC3339)), tools, mem)
 
 	fmt.Printf("channel %s\n", channelId)
 	fmt.Println("Please enter the content and press Enter (enter '/exit' to exit):")
