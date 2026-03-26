@@ -30,13 +30,14 @@ type history struct {
 
 type memory struct {
 	mutex sync.RWMutex
-
-	key     string
+	key   string
+	// history stores all chat messages with timestamps
 	history []history
 	length  int
 	hasSync bool
 }
 
+// NewMemory creates a new Memory instance, auto-creates memory/ directory
 func NewMemory(key string) Memory {
 	if err := os.MkdirAll(filepath.Join("memory"), 0755); err != nil {
 		panic(err)
@@ -47,6 +48,7 @@ func NewMemory(key string) Memory {
 	}
 }
 
+// Run periodically saves history to disk (every 10 seconds)
 func (m *memory) Run(ctx context.Context) {
 	ticker := time.NewTicker(time.Second * 10)
 	defer ticker.Stop()
@@ -97,24 +99,20 @@ func (m *memory) LastHistory() history {
 	if len(m.history) == 0 {
 		return history{}
 	}
-	last := m.history[len(m.history)-1]
-	return last
+	return m.history[len(m.history)-1]
 }
 
 func (m *memory) History() []history {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
-
 	output := make([]history, len(m.history))
 	copy(output, m.history)
-
 	return output
 }
 
 func (m *memory) HistoryMessages() []openai.ChatCompletionMessage {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
-
 	messages := make([]openai.ChatCompletionMessage, len(m.history))
 	for idx := range m.history {
 		messages[idx] = m.history[idx].ChatCompletionMessage
@@ -125,9 +123,10 @@ func (m *memory) HistoryMessages() []openai.ChatCompletionMessage {
 func (m *memory) Length() int {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
-
 	return m.length
 }
+
+// saveHistory uses atomic write (temp file + rename) to prevent corruption
 func (m *memory) saveHistory() {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
@@ -143,7 +142,6 @@ func (m *memory) saveHistory() {
 	err = safeWriteFile(m.fileName(), data, 0644)
 	if err != nil {
 		fmt.Printf("history save error: %s\n", err)
-		return
 	}
 }
 
@@ -153,36 +151,29 @@ func (m *memory) fileName() string {
 
 func safeWriteFile(filename string, data []byte, perm os.FileMode) error {
 	dir := filepath.Dir(filename)
-
 	tmpFile, err := os.CreateTemp(dir, "tmp-"+filepath.Base(filename)+"-*")
 	if err != nil {
 		return fmt.Errorf("create temp file error: %w", err)
 	}
-
 	defer os.Remove(tmpFile.Name())
 
 	if _, err := tmpFile.Write(data); err != nil {
 		tmpFile.Close()
 		return fmt.Errorf("write data error: %w", err)
 	}
-
 	if err := tmpFile.Chmod(perm); err != nil {
 		tmpFile.Close()
 		return fmt.Errorf("chmod error: %w", err)
 	}
-
 	if err := tmpFile.Sync(); err != nil {
 		tmpFile.Close()
 		return fmt.Errorf("fsync error: %w", err)
 	}
-
 	if err := tmpFile.Close(); err != nil {
 		return fmt.Errorf("close temp file error: %w", err)
 	}
-
 	if err := os.Rename(tmpFile.Name(), filename); err != nil {
 		return fmt.Errorf("rename error: %w", err)
 	}
-
 	return nil
 }

@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	systemPrompt = `You are a helpful assistant. You are able to answer questions and perform tasks. Tody is %s.`
+	systemPrompt = `You are a helpful assistant. Tody is %s.`
 )
 
 var (
@@ -31,13 +31,13 @@ func usage() {
   /clear: clear the chat history.`)
 }
 
+// Main entry point for interactive chat
 func Main() {
-
 	channelId := uuid.NewString()
 	ctx, cancel := context.WithCancel(context.WithValue(context.Background(), "channelId", channelId))
 	defer cancel()
 
-	// create main memory
+	// Create memory for chat history persistence
 	mem := memory.NewMemory(channelId)
 	go mem.Run(ctx)
 
@@ -51,12 +51,14 @@ func Main() {
 	fmt.Printf("channel %s\n", channelId)
 	fmt.Println("Please enter the content and press Enter (enter '/exit' to exit):")
 	usage()
+
 	for {
 		fmt.Println("-------------------------------")
 		fmt.Print("\033[32mYou: \033[0m")
 
 		if scanner.Scan() {
 			input := scanner.Text()
+			// Handle commands
 			if strings.HasPrefix(input, "/") {
 				switch input {
 				case "/exit":
